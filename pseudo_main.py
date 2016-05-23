@@ -1,5 +1,3 @@
-#imports
-import threading
 
 #classes
 
@@ -98,7 +96,7 @@ class LogMonitor:
         #expecting host, path, and and auth type, then auth object?
         self.fetch_params
         #connect to host
-        #get text
+        #get text, sftp
         return raw_text
     
     def json_parse(raw_text):
@@ -106,6 +104,7 @@ class LogMonitor:
         #expecting parent, number to go back, and unique id
         #if parent="/" or something,  then it's the whole document
         #if not, get content of records whose unique id aren't already stored
+        return result
     
     def check():
         tmp=self.status
