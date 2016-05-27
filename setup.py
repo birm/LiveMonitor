@@ -3,8 +3,8 @@ from distutils.core import setup
 files=["Monitors/*"]
 
 setup(name='LiveMonitor',
-    version="0.1",
-    description="Live async checks on the status of your network services and devices. Check port status, see networked host information, and check log summaries. API and application.",
+    version="1.0",
+    description="Live async checks on the status of your network services and devices. Check port status, see networked host information, and check log summaries. API and application. Working on testing, API engine, and sample user interface. Will put into beta when testing complete",
     author="Ryan Birmingham",
     url="http://rbirm.us",
     packages=['LiveMonitor'],
@@ -12,7 +12,7 @@ setup(name='LiveMonitor',
     long_description=open('README').read(),
     install_requires=["json","paramiko"],
     classifiers=[
-        "Development Status :: 1 - Planning",
+        "Development Status :: 3 - Alpha",
         "Intended Audience :: Information Technology",
         "License :: OSI Approved :: MIT License",
         "Topic :: System :: Monitoring",
