@@ -10,7 +10,7 @@ setup(name='LiveMonitor',
     packages=['LiveMonitor'],
     package_data={'LiveMonitor':files},
     long_description=open('README').read(),
-    install_requires=["json","paramiko"],
+    install_requires=["logging", "time", "threading", "sockets", "json", "subprocess"],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Information Technology",
