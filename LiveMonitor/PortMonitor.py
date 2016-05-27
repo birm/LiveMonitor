@@ -1,4 +1,5 @@
 import logging, threading, socket
+from MonitorRegistry import *
 #the driving engine for port checks
 class PortMonitor:
     #need socket
@@ -11,11 +12,11 @@ class PortMonitor:
     safe=True
     timeout= 0.1
 
-    def __init__(self,host="127.0.0.1",freq=10.0,ports=[80,22]):
+    def __init__(self,**kwargs):
         #TODO exceptions to ensure variables are correct type
-        self.host=host
-        self.freq=freq
-        self.ports=ports
+        self.host=kwargs.get('host',"127.0.0.1")
+        self.freq=kwargs.get('freq',10.0)
+        self.ports=kwargs.get('ports',[80,22])
         self.worker=threading.Timer(self.freq,self.check)
         #runtime checks
         if (self.freq<(len(self.ports)*self.timeout)):

@@ -1,4 +1,6 @@
 import logging, threading, subprocess, platform
+from netaddr import *
+from MonitorRegistry import *
 #the driving engine for host checks
 class HostMonitor:
     #need netaddr
@@ -11,10 +13,10 @@ class HostMonitor:
     safe=True
     ping_suffix = "-c 1"
 
-    def __init__(self,subnet="192.168.1.0/24",freq=10):
-        self.subnet=subnet
-        self.freq=freq
-        self.sub=IPSet([subnet])
+    def __init__(self,**kwargs):
+        self.subnet=kwargs.get('subnet',"192.168.1.0/24")
+        self.freq=kwargs.get('freq',10.0)
+        self.sub=IPSet([self.subnet])
         self.worker=threading.Timer(self.freq,self.check)
         self.ping_suffix = "-n 1" if  platform.system().lower()=="windows" else "-c 1"
         

@@ -1,4 +1,5 @@
 import logging, time, threading, json, subprocess
+from MonitorRegistry import *
 class LogMonitor:
     #maybe find a library to parse more formats?
     __metaclass__=MonitorRegistry
@@ -10,11 +11,12 @@ class LogMonitor:
     safe=True
     result={} #store your variables
     
-    def __init__(self,freq=100,fetch=self.scp_fetch,parse=self.json_parse,fetch_params=[],parse_params=[]):
-        self.fetch=fetch
-        self.parse=parse
-        self.fetch_params=fetch_params
-	    self.parse_params=parse_params
+    def __init__(self, **kwargs):
+        self.fetch=kwargs.get('freq', 100)
+	self.fetch=kwargs.get('fetch',self.scp_fetch)
+        self.parse=kwargs.get('parse', self.json_parse)
+        self.fetch_params=kwargs.get('fetch_params',[])
+        self.parse_params=kwargs.get('parse_params',[])
         self.worker=threading.Timer(self.freq,self.check)
     
     def scp_fetch():
