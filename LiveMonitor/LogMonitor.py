@@ -1,23 +1,20 @@
 import logging, time, threading, json, subprocess
-from MonitorRegistry import *
-class LogMonitor:
+from Monitor import *
+class LogMonitor(Monitor):
     #maybe find a library to parse more formats?
-    __metaclass__=MonitorRegistry
-    status=[]
-    prev=[]
-    fetch_params=[] #store ordered information for fetch
-    parse_params=[] #store ordered information for parse
-    freq=100
+    status={}
+    prev={}
     safe=True
-    result={} #store your variables
     
     def __init__(self, **kwargs):
-        self.fetch=kwargs.get('freq', 100)
+        super(self.__class__,self).__init__(self,**kwargs)
+        self.freq=kwargs.get('freq', 100)
 	self.fetch=kwargs.get('fetch',self.scp_fetch)
         self.parse=kwargs.get('parse', self.json_parse)
         self.fetch_params=kwargs.get('fetch_params',[])
         self.parse_params=kwargs.get('parse_params',[])
         self.worker=threading.Timer(self.freq,self.check)
+        self.__repr__="Log Monitor for " + path=self.fetch_params[1]+"@"+self.fetch_params[0]
     
     def scp_fetch():
         #how cross compatible is this?

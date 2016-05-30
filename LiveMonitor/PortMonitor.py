@@ -1,23 +1,20 @@
 import logging, threading, socket
-from MonitorRegistry import *
+from Monitor import *
 #the driving engine for port checks
-class PortMonitor:
+class PortMonitor(Monitor):
     #need socket
-    __metaclass__ = MonitorRegistry
-    status=[] #output variable of status at last check
-    prev=[] #previous result, for comparison
-    host="127.0.0.1" #the host to check
-    ports=[80,22] # a list of ports to check
-    freq=10.0 # how often to check, seconds
+    status={} #output variable of status at last check
+    prev={}
     safe=True
     timeout= 0.1
 
     def __init__(self,**kwargs):
-        #TODO exceptions to ensure variables are correct type
+        super(self.__class__,self).__init__(self,**kwargs)
         self.host=kwargs.get('host',"127.0.0.1")
         self.freq=kwargs.get('freq',10.0)
         self.ports=kwargs.get('ports',[80,22])
         self.worker=threading.Timer(self.freq,self.check)
+        self.__repr__="Port Monitor for " + self.host
         #runtime checks
         if (self.freq<(len(self.ports)*self.timeout)):
             #recommend reconfiguring timeout
