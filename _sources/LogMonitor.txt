@@ -1,0 +1,13 @@
+*****
+LogMonitor
+*****
+.. py:function:: LogMonitor.__init__ (fetch=scp_fetch,parse=json_parse,freq=100.0, fetch_params=[],parse_params=[])
+    Create a log monitor with specified methods to get and parse logs (with lists to hold function-specific parameters), a specified frequency to check
+.. py:function:: LogMonitor.check()
+    Run a check for the monitor once
+.. py:function:: LogMonitor.start()
+    Async run a check for the monitor every freq seconds
+.. py:function:: LogMonitor.scp_fetch()
+    get the file through scp; expecting host, path, and and username in fetch_params
+.. py:function:: LogMonitor.json_parse()
+    parse the log file using json; expecting parent and unique id in parse_params

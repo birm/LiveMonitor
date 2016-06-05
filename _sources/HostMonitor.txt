@@ -1,0 +1,9 @@
+*****
+HostMonitor
+*****
+.. py:function:: HostMonitor.__init__ (subnet="192.168.1.0/24",freq=10.0)
+    Create a host monitor with a specified subnet to search and a specified frequency to check
+.. py:function:: HostMonitor.check()
+    Run a check for the monitor once
+.. py:function:: HostMonitor.start()
+    Async run a check for the monitor every freq seconds

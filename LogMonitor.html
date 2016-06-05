@@ -1,0 +1,134 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>LogMonitor &mdash; LiveMonitor 1.2.2 documentation</title>
+    
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.2.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="LiveMonitor 1.2.2 documentation" href="index.html" />
+    <link rel="next" title="HostMonitor" href="HostMonitor.html" />
+    <link rel="prev" title="PortMonitor" href="PortMonitor.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head>
+  <body role="document">
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="logmonitor">
+<h1>LogMonitor<a class="headerlink" href="#logmonitor" title="Permalink to this headline">¶</a></h1>
+<dl class="function">
+<dt id="LogMonitor.__init__">
+<code class="descclassname">LogMonitor.</code><code class="descname">__init__</code><span class="sig-paren">(</span><em>fetch=scp_fetch</em>, <em>parse=json_parse</em>, <em>freq=100.0</em>, <em>fetch_params=[]</em>, <em>parse_params=[]</em><span class="sig-paren">)</span><a class="headerlink" href="#LogMonitor.__init__" title="Permalink to this definition">¶</a></dt>
+<dt>
+<code class="descname">Create a log monitor with specified methods to get and parse logs (with lists to hold function-specific parameters), a specified frequency to check</code></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="LogMonitor.check">
+<code class="descclassname">LogMonitor.</code><code class="descname">check</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#LogMonitor.check" title="Permalink to this definition">¶</a></dt>
+<dt>
+<code class="descname">Run a check for the monitor once</code></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="LogMonitor.start">
+<code class="descclassname">LogMonitor.</code><code class="descname">start</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#LogMonitor.start" title="Permalink to this definition">¶</a></dt>
+<dt>
+<code class="descname">Async run a check for the monitor every freq seconds</code></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="LogMonitor.scp_fetch">
+<code class="descclassname">LogMonitor.</code><code class="descname">scp_fetch</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#LogMonitor.scp_fetch" title="Permalink to this definition">¶</a></dt>
+<dt>
+<code class="descname">get the file through scp; expecting host, path, and and username in fetch_params</code></dt>
+<dd></dd></dl>
+
+<dl class="function">
+<dt id="LogMonitor.json_parse">
+<code class="descclassname">LogMonitor.</code><code class="descname">json_parse</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#LogMonitor.json_parse" title="Permalink to this definition">¶</a></dt>
+<dt>
+<code class="descname">parse the log file using json; expecting parent and unique id in parse_params</code></dt>
+<dd></dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="PortMonitor.html" title="previous chapter">PortMonitor</a></li>
+      <li>Next: <a href="HostMonitor.html" title="next chapter">HostMonitor</a></li>
+  </ul></li>
+</ul>
+</div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/LogMonitor.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2016, Ryan Birmingham.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.4.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.8</a>
+      
+      |
+      <a href="_sources/LogMonitor.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

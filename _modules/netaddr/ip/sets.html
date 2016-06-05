@@ -1,0 +1,834 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>netaddr.ip.sets &mdash; LiveMonitor 1.2.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '1.2.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="LiveMonitor 1.2.2 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head>
+  <body role="document">
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for netaddr.ip.sets</h1><div class="highlight"><pre>
+<span></span><span class="c1">#-----------------------------------------------------------------------------</span>
+<span class="c1">#   Copyright (c) 2008-2015, David P. D. Moss. All rights reserved.</span>
+<span class="c1">#</span>
+<span class="c1">#   Released under the BSD license. See the LICENSE file for details.</span>
+<span class="c1">#-----------------------------------------------------------------------------</span>
+<span class="sd">&quot;&quot;&quot;Set based operations for IP addresses and subnets.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">itertools</span> <span class="kn">as</span> <span class="nn">_itertools</span>
+
+<span class="kn">from</span> <span class="nn">netaddr.ip</span> <span class="kn">import</span> <span class="p">(</span><span class="n">IPNetwork</span><span class="p">,</span> <span class="n">IPAddress</span><span class="p">,</span> <span class="n">IPRange</span><span class="p">,</span> <span class="n">cidr_merge</span><span class="p">,</span>
+    <span class="n">cidr_exclude</span><span class="p">,</span> <span class="n">iprange_to_cidrs</span><span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">netaddr.compat</span> <span class="kn">import</span> <span class="n">_sys_maxint</span><span class="p">,</span> <span class="n">_dict_keys</span><span class="p">,</span> <span class="n">_int_type</span>
+
+
+<span class="k">def</span> <span class="nf">_subtract</span><span class="p">(</span><span class="n">supernet</span><span class="p">,</span> <span class="n">subnets</span><span class="p">,</span> <span class="n">subnet_idx</span><span class="p">,</span> <span class="n">ranges</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculate IPSet([supernet]) - IPSet(subnets).</span>
+
+<span class="sd">    Assumptions: subnets is sorted, subnet_idx points to the first</span>
+<span class="sd">    element in subnets that is a subnet of supernet.</span>
+
+<span class="sd">    Results are appended to the ranges parameter as tuples of in format</span>
+<span class="sd">    (version, first, last). Return value is the first subnet_idx that</span>
+<span class="sd">    does not point to a subnet of supernet (or len(subnets) if all</span>
+<span class="sd">    subsequents items are a subnet of supernet).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="n">supernet</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span>
+    <span class="n">subnet</span> <span class="o">=</span> <span class="n">subnets</span><span class="p">[</span><span class="n">subnet_idx</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">subnet</span><span class="o">.</span><span class="n">first</span> <span class="o">&gt;</span> <span class="n">supernet</span><span class="o">.</span><span class="n">first</span><span class="p">:</span>
+        <span class="n">ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">version</span><span class="p">,</span> <span class="n">supernet</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">subnet</span><span class="o">.</span><span class="n">first</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+    <span class="n">subnet_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">prev_subnet</span> <span class="o">=</span> <span class="n">subnet</span>
+    <span class="k">while</span> <span class="n">subnet_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">subnets</span><span class="p">):</span>
+        <span class="n">cur_subnet</span> <span class="o">=</span> <span class="n">subnets</span><span class="p">[</span><span class="n">subnet_idx</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">cur_subnet</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">supernet</span><span class="p">:</span>
+            <span class="k">break</span>
+        <span class="k">if</span> <span class="n">prev_subnet</span><span class="o">.</span><span class="n">last</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">==</span> <span class="n">cur_subnet</span><span class="o">.</span><span class="n">first</span><span class="p">:</span>
+            <span class="c1"># two adjacent, non-mergable IPNetworks</span>
+            <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">version</span><span class="p">,</span> <span class="n">prev_subnet</span><span class="o">.</span><span class="n">last</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">cur_subnet</span><span class="o">.</span><span class="n">first</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="n">subnet_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">prev_subnet</span> <span class="o">=</span> <span class="n">cur_subnet</span>
+
+    <span class="n">first</span> <span class="o">=</span> <span class="n">prev_subnet</span><span class="o">.</span><span class="n">last</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">last</span> <span class="o">=</span> <span class="n">supernet</span><span class="o">.</span><span class="n">last</span>
+    <span class="k">if</span> <span class="n">first</span> <span class="o">&lt;=</span> <span class="n">last</span><span class="p">:</span>
+        <span class="n">ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">version</span><span class="p">,</span> <span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">subnet_idx</span>
+
+
+<span class="k">def</span> <span class="nf">_iter_merged_ranges</span><span class="p">(</span><span class="n">sorted_ranges</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Iterate over sorted_ranges, merging where possible</span>
+
+<span class="sd">    Sorted ranges must be a sorted iterable of (version, first, last) tuples.</span>
+<span class="sd">    Merging occurs for pairs like [(4, 10, 42), (4, 43, 100)] which is merged</span>
+<span class="sd">    into (4, 10, 100), and leads to return value</span>
+<span class="sd">    ( IPAddress(10, 4), IPAddress(100, 4) ), which is suitable input for the</span>
+<span class="sd">    iprange_to_cidrs function.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sorted_ranges</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="n">current_version</span><span class="p">,</span> <span class="n">current_start</span><span class="p">,</span> <span class="n">current_stop</span> <span class="o">=</span> <span class="n">sorted_ranges</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">next_version</span><span class="p">,</span> <span class="n">next_start</span><span class="p">,</span> <span class="n">next_stop</span> <span class="ow">in</span> <span class="n">sorted_ranges</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="k">if</span> <span class="n">next_start</span> <span class="o">==</span> <span class="n">current_stop</span> <span class="o">+</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">next_version</span> <span class="o">==</span> <span class="n">current_version</span><span class="p">:</span>
+            <span class="c1"># Can be merged.</span>
+            <span class="n">current_stop</span> <span class="o">=</span> <span class="n">next_stop</span>
+            <span class="k">continue</span>
+        <span class="c1"># Cannot be merged.</span>
+        <span class="k">yield</span> <span class="p">(</span><span class="n">IPAddress</span><span class="p">(</span><span class="n">current_start</span><span class="p">,</span> <span class="n">current_version</span><span class="p">),</span>
+               <span class="n">IPAddress</span><span class="p">(</span><span class="n">current_stop</span><span class="p">,</span> <span class="n">current_version</span><span class="p">))</span>
+        <span class="n">current_start</span> <span class="o">=</span> <span class="n">next_start</span>
+        <span class="n">current_stop</span> <span class="o">=</span> <span class="n">next_stop</span>
+        <span class="n">current_version</span> <span class="o">=</span> <span class="n">next_version</span>
+    <span class="k">yield</span> <span class="p">(</span><span class="n">IPAddress</span><span class="p">(</span><span class="n">current_start</span><span class="p">,</span> <span class="n">current_version</span><span class="p">),</span>
+           <span class="n">IPAddress</span><span class="p">(</span><span class="n">current_stop</span><span class="p">,</span> <span class="n">current_version</span><span class="p">))</span>
+
+
+<span class="k">class</span> <span class="nc">IPSet</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an unordered collection (set) of unique IP addresses and</span>
+<span class="sd">    subnets.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;_cidrs&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">iterable</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Constructor.</span>
+
+<span class="sd">        :param iterable: (optional) an iterable containing IP addresses and</span>
+<span class="sd">            subnets.</span>
+
+<span class="sd">        :param flags: decides which rules are applied to the interpretation</span>
+<span class="sd">            of the addr value. See the netaddr.core namespace documentation</span>
+<span class="sd">            for supported constant values.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="n">IPNetwork</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="p">{</span><span class="n">iterable</span><span class="o">.</span><span class="n">cidr</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="n">IPRange</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">iprange_to_cidrs</span><span class="p">(</span><span class="n">iterable</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">iterable</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="n">IPSet</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">iterable</span><span class="o">.</span><span class="n">iter_cidrs</span><span class="p">(),</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">iterable</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">mergeable</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">addr</span> <span class="ow">in</span> <span class="n">iterable</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">_int_type</span><span class="p">):</span>
+                        <span class="n">addr</span> <span class="o">=</span> <span class="n">IPAddress</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">flags</span><span class="p">)</span>
+                    <span class="n">mergeable</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+                <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">cidr_merge</span><span class="p">(</span><span class="n">mergeable</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">cidr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">__getstate__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;:return: Pickled state of an ``IPSet`` object.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">cidr</span><span class="o">.</span><span class="n">__getstate__</span><span class="p">()</span> <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">__setstate__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param state: data used to unpickle a pickled ``IPSet`` object.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">IPNetwork</span><span class="p">((</span><span class="n">value</span><span class="p">,</span> <span class="n">prefixlen</span><span class="p">),</span> <span class="n">version</span><span class="o">=</span><span class="n">version</span><span class="p">)</span>
+             <span class="k">for</span> <span class="n">value</span><span class="p">,</span> <span class="n">prefixlen</span><span class="p">,</span> <span class="n">version</span> <span class="ow">in</span> <span class="n">state</span><span class="p">),</span>
+            <span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_compact_single_network</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">added_network</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Same as compact(), but assume that added_network is the only change and</span>
+<span class="sd">        that this IPSet was properly compacted before added_network was added.</span>
+<span class="sd">        This allows to perform compaction much faster. added_network must</span>
+<span class="sd">        already be present in self._cidrs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">added_first</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">first</span>
+        <span class="n">added_last</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">last</span>
+        <span class="n">added_version</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">version</span>
+
+        <span class="c1"># Check for supernets and subnets of added_network.</span>
+        <span class="k">if</span> <span class="n">added_network</span><span class="o">.</span><span class="n">_prefixlen</span> <span class="o">==</span> <span class="n">added_network</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">width</span><span class="p">:</span>
+            <span class="c1"># This is a single IP address, i.e. /32 for IPv4 or /128 for IPv6.</span>
+            <span class="c1"># It does not have any subnets, so we only need to check for its</span>
+            <span class="c1"># potential supernets.</span>
+            <span class="k">for</span> <span class="n">potential_supernet</span> <span class="ow">in</span> <span class="n">added_network</span><span class="o">.</span><span class="n">supernet</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">potential_supernet</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+                    <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">added_network</span><span class="p">]</span>
+                    <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># IPNetworks from self._cidrs that are subnets of added_network.</span>
+            <span class="n">to_remove</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">cidr</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span> <span class="o">!=</span> <span class="n">added_version</span> <span class="ow">or</span> <span class="n">cidr</span> <span class="o">==</span> <span class="n">added_network</span><span class="p">):</span>
+                    <span class="c1"># We found added_network or some network of a different version.</span>
+                    <span class="k">continue</span>
+                <span class="n">first</span> <span class="o">=</span> <span class="n">cidr</span><span class="o">.</span><span class="n">first</span>
+                <span class="n">last</span> <span class="o">=</span> <span class="n">cidr</span><span class="o">.</span><span class="n">last</span>
+                <span class="k">if</span> <span class="n">first</span> <span class="o">&gt;=</span> <span class="n">added_first</span> <span class="ow">and</span> <span class="n">last</span> <span class="o">&lt;=</span> <span class="n">added_last</span><span class="p">:</span>
+                    <span class="c1"># cidr is a subnet of added_network. Remember to remove it.</span>
+                    <span class="n">to_remove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cidr</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">first</span> <span class="o">&lt;=</span> <span class="n">added_first</span> <span class="ow">and</span> <span class="n">last</span> <span class="o">&gt;=</span> <span class="n">added_last</span><span class="p">:</span>
+                    <span class="c1"># cidr is a supernet of added_network. Remove added_network.</span>
+                    <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">added_network</span><span class="p">]</span>
+                    <span class="c1"># This IPSet was properly compacted before. Since added_network</span>
+                    <span class="c1"># is removed now, it must again be properly compacted -&gt; done.</span>
+                    <span class="k">assert</span> <span class="p">(</span><span class="ow">not</span> <span class="n">to_remove</span><span class="p">)</span>
+                    <span class="k">return</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">item</span><span class="p">]</span>
+
+        <span class="c1"># Check if added_network can be merged with another network.</span>
+
+        <span class="c1"># Note that merging can only happen between networks of the same</span>
+        <span class="c1"># prefixlen. This just leaves 2 candidates: The IPNetworks just before</span>
+        <span class="c1"># and just after the added_network.</span>
+        <span class="c1"># This can be reduced to 1 candidate: 10.0.0.0/24 and 10.0.1.0/24 can</span>
+        <span class="c1"># be merged into into 10.0.0.0/23. But 10.0.1.0/24 and 10.0.2.0/24</span>
+        <span class="c1"># cannot be merged. With only 1 candidate, we might as well make a</span>
+        <span class="c1"># dictionary lookup.</span>
+        <span class="n">shift_width</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">width</span> <span class="o">-</span> <span class="n">added_network</span><span class="o">.</span><span class="n">prefixlen</span>
+        <span class="k">while</span> <span class="n">added_network</span><span class="o">.</span><span class="n">prefixlen</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># figure out if the least significant bit of the network part is 0 or 1.</span>
+            <span class="n">the_bit</span> <span class="o">=</span> <span class="p">(</span><span class="n">added_network</span><span class="o">.</span><span class="n">_value</span> <span class="o">&gt;&gt;</span> <span class="n">shift_width</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">the_bit</span><span class="p">:</span>
+                <span class="n">candidate</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">previous</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">candidate</span> <span class="o">=</span> <span class="n">added_network</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">candidate</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+                <span class="c1"># The only possible merge does not work -&gt; merge done</span>
+                <span class="k">return</span>
+            <span class="c1"># Remove added_network&amp;candidate, add merged network.</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">candidate</span><span class="p">]</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">added_network</span><span class="p">]</span>
+            <span class="n">added_network</span><span class="o">.</span><span class="n">prefixlen</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="c1"># Be sure that we set the host bits to 0 when we move the prefixlen.</span>
+            <span class="c1"># Otherwise, adding 255.255.255.255/32 will result in a merged</span>
+            <span class="c1"># 255.255.255.255/24 network, but we want 255.255.255.0/24.</span>
+            <span class="n">shift_width</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">added_network</span><span class="o">.</span><span class="n">_value</span> <span class="o">=</span> <span class="p">(</span><span class="n">added_network</span><span class="o">.</span><span class="n">_value</span> <span class="o">&gt;&gt;</span> <span class="n">shift_width</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="n">shift_width</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">added_network</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">compact</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compact internal list of `IPNetwork` objects using a CIDR merge.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cidrs</span> <span class="o">=</span> <span class="n">cidr_merge</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">cidrs</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Raises ``TypeError`` if this method is called.</span>
+
+<span class="sd">        .. note:: IPSet objects are not hashable and cannot be used as \</span>
+<span class="sd">            dictionary keys or as members of other sets. \</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;IP sets are unhashable!&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ip</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param ip: An IP address or subnet.</span>
+
+<span class="sd">        :return: ``True`` if IP address or subnet is a member of this IP set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Iterating over self._cidrs is an O(n) operation: 1000 items in</span>
+        <span class="c1"># self._cidrs would mean 1000 loops. Iterating over all possible</span>
+        <span class="c1"># supernets loops at most 32 times for IPv4 or 128 times for IPv6,</span>
+        <span class="c1"># no matter how many CIDRs this object contains.</span>
+        <span class="n">supernet</span> <span class="o">=</span> <span class="n">IPNetwork</span><span class="p">(</span><span class="n">ip</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">supernet</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">while</span> <span class="n">supernet</span><span class="o">.</span><span class="n">_prefixlen</span><span class="p">:</span>
+            <span class="n">supernet</span><span class="o">.</span><span class="n">_prefixlen</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">supernet</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">__nonzero__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return True if IPSet contains at least one IP, else False&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+
+    <span class="n">__bool__</span> <span class="o">=</span> <span class="n">__nonzero__</span>  <span class="c1">#   Python 3.x.</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :return: an iterator over the IP addresses within this IP set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">_itertools</span><span class="o">.</span><span class="n">chain</span><span class="p">(</span><span class="o">*</span><span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">iter_cidrs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :return: an iterator over individual IP subnets within this IP set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Adds an IP address or subnet or IPRange to this IP set. Has no effect if</span>
+<span class="sd">        it is already present.</span>
+
+<span class="sd">        Note that where possible the IP address or subnet is merged with other</span>
+<span class="sd">        members of the set to form more concise CIDR blocks.</span>
+
+<span class="sd">        :param addr: An IP address or subnet in either string or object form, or</span>
+<span class="sd">            an IPRange object.</span>
+
+<span class="sd">        :param flags: decides which rules are applied to the interpretation</span>
+<span class="sd">            of the addr value. See the netaddr.core namespace documentation</span>
+<span class="sd">            for supported constant values.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">IPRange</span><span class="p">):</span>
+            <span class="n">new_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">iprange_to_cidrs</span><span class="p">(</span><span class="n">addr</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">addr</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="bp">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_cidrs</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">compact</span><span class="p">()</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">IPNetwork</span><span class="p">):</span>
+            <span class="c1"># Networks like 10.1.2.3/8 need to be normalized to 10.0.0.0/8</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">addr</span><span class="o">.</span><span class="n">cidr</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">_int_type</span><span class="p">):</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">IPNetwork</span><span class="p">(</span><span class="n">IPAddress</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">flags</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">IPNetwork</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">addr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_compact_single_network</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes an IP address or subnet or IPRange from this IP set. Does</span>
+<span class="sd">        nothing if it is not already a member.</span>
+
+<span class="sd">        Note that this method behaves more like discard() found in regular</span>
+<span class="sd">        Python sets because it doesn&#39;t raise KeyError exceptions if the</span>
+<span class="sd">        IP address or subnet is question does not exist. It doesn&#39;t make sense</span>
+<span class="sd">        to fully emulate that behaviour here as IP sets contain groups of</span>
+<span class="sd">        individual IP addresses as individual set members using IPNetwork</span>
+<span class="sd">        objects.</span>
+
+<span class="sd">        :param addr: An IP address or subnet, or an IPRange.</span>
+
+<span class="sd">        :param flags: decides which rules are applied to the interpretation</span>
+<span class="sd">            of the addr value. See the netaddr.core namespace documentation</span>
+<span class="sd">            for supported constant values.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">IPRange</span><span class="p">):</span>
+            <span class="n">cidrs</span> <span class="o">=</span> <span class="n">iprange_to_cidrs</span><span class="p">(</span><span class="n">addr</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">addr</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">cidrs</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">cidr</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">_int_type</span><span class="p">):</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">IPAddress</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">flags</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">IPNetwork</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+        <span class="c1">#   This add() is required for address blocks provided that are larger</span>
+        <span class="c1">#   than blocks found within the set but have overlaps. e.g. :-</span>
+        <span class="c1">#</span>
+        <span class="c1">#   &gt;&gt;&gt; IPSet([&#39;192.0.2.0/24&#39;]).remove(&#39;192.0.2.0/23&#39;)</span>
+        <span class="c1">#   IPSet([])</span>
+        <span class="c1">#</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+        <span class="n">remainder</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">matching_cidr</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="c1">#   Search for a matching CIDR and exclude IP from it.</span>
+        <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">addr</span> <span class="ow">in</span> <span class="n">cidr</span><span class="p">:</span>
+                <span class="n">remainder</span> <span class="o">=</span> <span class="n">cidr_exclude</span><span class="p">(</span><span class="n">cidr</span><span class="p">,</span> <span class="n">addr</span><span class="p">)</span>
+                <span class="n">matching_cidr</span> <span class="o">=</span> <span class="n">cidr</span>
+                <span class="k">break</span>
+
+        <span class="c1">#   Replace matching CIDR with remaining CIDR elements.</span>
+        <span class="k">if</span> <span class="n">remainder</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">matching_cidr</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">remainder</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">cidr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="c1"># No call to self.compact() is needed. Removing an IPNetwork cannot</span>
+                <span class="c1"># create mergable networks.</span>
+
+    <span class="k">def</span> <span class="nf">pop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes and returns an arbitrary IP address or subnet from this IP</span>
+<span class="sd">        set.</span>
+
+<span class="sd">        :return: An IP address or subnet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="o">.</span><span class="n">popitem</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">isdisjoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: ``True`` if this IP set has no elements (IP addresses</span>
+<span class="sd">            or subnets) in common with other. Intersection *must* be an</span>
+<span class="sd">            empty set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="n">result</span>
+
+    <span class="k">def</span> <span class="nf">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;:return: a shallow copy of this IP set.&quot;&quot;&quot;</span>
+        <span class="n">obj_copy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">()</span>
+        <span class="n">obj_copy</span><span class="o">.</span><span class="n">_cidrs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">obj_copy</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">iterable</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update the contents of this IP set with the union of itself and</span>
+<span class="sd">        other IP set.</span>
+
+<span class="sd">        :param iterable: an iterable containing IP addresses and subnets.</span>
+
+<span class="sd">        :param flags: decides which rules are applied to the interpretation</span>
+<span class="sd">            of the addr value. See the netaddr.core namespace documentation</span>
+<span class="sd">            for supported constant values.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="n">IPSet</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">ip</span> <span class="k">for</span> <span class="n">ip</span> <span class="ow">in</span> <span class="n">cidr_merge</span><span class="p">(</span><span class="n">_dict_keys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+                                         <span class="o">+</span> <span class="n">_dict_keys</span><span class="p">(</span><span class="n">iterable</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">))),</span> <span class="bp">True</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="p">(</span><span class="n">IPNetwork</span><span class="p">,</span> <span class="n">IPRange</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">iterable</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">iterable</span><span class="p">,</span> <span class="s1">&#39;__iter__&#39;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;an iterable was expected!&#39;</span><span class="p">)</span>
+        <span class="c1">#   An iterable containing IP addresses or subnets.</span>
+        <span class="n">mergeable</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">addr</span> <span class="ow">in</span> <span class="n">iterable</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">_int_type</span><span class="p">):</span>
+                <span class="n">addr</span> <span class="o">=</span> <span class="n">IPAddress</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">flags</span><span class="p">)</span>
+            <span class="n">mergeable</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">cidr_merge</span><span class="p">(</span><span class="n">_dict_keys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span> <span class="o">+</span> <span class="n">mergeable</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">cidr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">compact</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Remove all IP addresses and subnets from this IP set.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set</span>
+
+<span class="sd">        :return: ``True`` if this IP set is equivalent to the ``other`` IP set,</span>
+<span class="sd">            ``False`` otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+
+    <span class="k">def</span> <span class="nf">__ne__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set</span>
+
+<span class="sd">        :return: ``False`` if this IP set is equivalent to the ``other`` IP set,</span>
+<span class="sd">            ``True`` otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">!=</span> <span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+
+    <span class="k">def</span> <span class="nf">__lt__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set</span>
+
+<span class="sd">        :return: ``True`` if this IP set is less than the ``other`` IP set,</span>
+<span class="sd">            ``False`` otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="s1">&#39;_cidrs&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">other</span><span class="o">.</span><span class="n">size</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">issubset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: ``True`` if every IP address and subnet in this IP set</span>
+<span class="sd">            is found within ``other``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">cidr</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">other</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="n">__le__</span> <span class="o">=</span> <span class="n">issubset</span>
+
+    <span class="k">def</span> <span class="nf">__gt__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: ``True`` if this IP set is greater than the ``other`` IP set,</span>
+<span class="sd">            ``False`` otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="s1">&#39;_cidrs&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="n">other</span><span class="o">.</span><span class="n">size</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">issuperset</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">issuperset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: ``True`` if every IP address and subnet in other IP set</span>
+<span class="sd">            is found within this one.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="s1">&#39;_cidrs&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+
+        <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">cidr</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="n">__ge__</span> <span class="o">=</span> <span class="n">issuperset</span>
+
+    <span class="k">def</span> <span class="nf">union</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: the union of this IP set and another as a new IP set</span>
+<span class="sd">            (combines IP addresses and subnets from both sets).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ip_set</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">ip_set</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ip_set</span>
+
+    <span class="n">__or__</span> <span class="o">=</span> <span class="n">union</span>
+
+    <span class="k">def</span> <span class="nf">intersection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: the intersection of this IP set and another as a new IP set.</span>
+<span class="sd">            (IP addresses and subnets common to both sets).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_cidrs</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">own_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">other_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">own_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">other_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">own_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">own_nets</span><span class="p">)</span>
+        <span class="n">other_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">other_nets</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">own_idx</span> <span class="o">&lt;</span> <span class="n">own_len</span> <span class="ow">and</span> <span class="n">other_idx</span> <span class="o">&lt;</span> <span class="n">other_len</span><span class="p">:</span>
+            <span class="n">own_cur</span> <span class="o">=</span> <span class="n">own_nets</span><span class="p">[</span><span class="n">own_idx</span><span class="p">]</span>
+            <span class="n">other_cur</span> <span class="o">=</span> <span class="n">other_nets</span><span class="p">[</span><span class="n">other_idx</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">own_cur</span> <span class="o">==</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">result_cidrs</span><span class="p">[</span><span class="n">own_cur</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">own_cur</span> <span class="ow">in</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">result_cidrs</span><span class="p">[</span><span class="n">own_cur</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">other_cur</span> <span class="ow">in</span> <span class="n">own_cur</span><span class="p">:</span>
+                <span class="n">result_cidrs</span><span class="p">[</span><span class="n">other_cur</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># own_cur and other_cur have nothing in common</span>
+                <span class="k">if</span> <span class="n">own_cur</span> <span class="o">&lt;</span> <span class="n">other_cur</span><span class="p">:</span>
+                    <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># We ran out of networks in own_nets or other_nets. Either way, there</span>
+        <span class="c1"># can be no further result_cidrs.</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">IPSet</span><span class="p">()</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="n">result_cidrs</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="n">__and__</span> <span class="o">=</span> <span class="n">intersection</span>
+
+    <span class="k">def</span> <span class="nf">symmetric_difference</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: the symmetric difference of this IP set and another as a new</span>
+<span class="sd">            IP set (all IP addresses and subnets that are in exactly one</span>
+<span class="sd">            of the sets).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># In contrast to intersection() and difference(), we cannot construct</span>
+        <span class="c1"># the result_cidrs easily. Some cidrs may have to be merged, e.g. for</span>
+        <span class="c1"># IPSet([&quot;10.0.0.0/32&quot;]).symmetric_difference(IPSet([&quot;10.0.0.1/32&quot;])).</span>
+        <span class="n">result_ranges</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">own_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">other_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">own_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">other_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">own_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">own_nets</span><span class="p">)</span>
+        <span class="n">other_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">other_nets</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">own_idx</span> <span class="o">&lt;</span> <span class="n">own_len</span> <span class="ow">and</span> <span class="n">other_idx</span> <span class="o">&lt;</span> <span class="n">other_len</span><span class="p">:</span>
+            <span class="n">own_cur</span> <span class="o">=</span> <span class="n">own_nets</span><span class="p">[</span><span class="n">own_idx</span><span class="p">]</span>
+            <span class="n">other_cur</span> <span class="o">=</span> <span class="n">other_nets</span><span class="p">[</span><span class="n">other_idx</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">own_cur</span> <span class="o">==</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">own_cur</span> <span class="ow">in</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">own_idx</span> <span class="o">=</span> <span class="n">_subtract</span><span class="p">(</span><span class="n">other_cur</span><span class="p">,</span> <span class="n">own_nets</span><span class="p">,</span> <span class="n">own_idx</span><span class="p">,</span> <span class="n">result_ranges</span><span class="p">)</span>
+                <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">other_cur</span> <span class="ow">in</span> <span class="n">own_cur</span><span class="p">:</span>
+                <span class="n">other_idx</span> <span class="o">=</span> <span class="n">_subtract</span><span class="p">(</span><span class="n">own_cur</span><span class="p">,</span> <span class="n">other_nets</span><span class="p">,</span> <span class="n">other_idx</span><span class="p">,</span> <span class="n">result_ranges</span><span class="p">)</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># own_cur and other_cur have nothing in common</span>
+                <span class="k">if</span> <span class="n">own_cur</span> <span class="o">&lt;</span> <span class="n">other_cur</span><span class="p">:</span>
+                    <span class="n">result_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">own_cur</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span><span class="p">,</span>
+                                          <span class="n">own_cur</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">own_cur</span><span class="o">.</span><span class="n">last</span><span class="p">))</span>
+                    <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">result_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">other_cur</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span><span class="p">,</span>
+                                          <span class="n">other_cur</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">other_cur</span><span class="o">.</span><span class="n">last</span><span class="p">))</span>
+                    <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># If the above loop terminated because it processed all cidrs of</span>
+        <span class="c1"># &quot;other&quot;, then any remaining cidrs in self must be part of the result.</span>
+        <span class="k">while</span> <span class="n">own_idx</span> <span class="o">&lt;</span> <span class="n">own_len</span><span class="p">:</span>
+            <span class="n">own_cur</span> <span class="o">=</span> <span class="n">own_nets</span><span class="p">[</span><span class="n">own_idx</span><span class="p">]</span>
+            <span class="n">result_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">own_cur</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span><span class="p">,</span>
+                                  <span class="n">own_cur</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">own_cur</span><span class="o">.</span><span class="n">last</span><span class="p">))</span>
+            <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># If the above loop terminated because it processed all cidrs of</span>
+        <span class="c1"># self, then any remaining cidrs in &quot;other&quot; must be part of the result.</span>
+        <span class="k">while</span> <span class="n">other_idx</span> <span class="o">&lt;</span> <span class="n">other_len</span><span class="p">:</span>
+            <span class="n">other_cur</span> <span class="o">=</span> <span class="n">other_nets</span><span class="p">[</span><span class="n">other_idx</span><span class="p">]</span>
+            <span class="n">result_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">other_cur</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span><span class="p">,</span>
+                                  <span class="n">other_cur</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">other_cur</span><span class="o">.</span><span class="n">last</span><span class="p">))</span>
+            <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">IPSet</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">stop</span> <span class="ow">in</span> <span class="n">_iter_merged_ranges</span><span class="p">(</span><span class="n">result_ranges</span><span class="p">):</span>
+            <span class="n">cidrs</span> <span class="o">=</span> <span class="n">iprange_to_cidrs</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">cidrs</span><span class="p">:</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">[</span><span class="n">cidr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="n">__xor__</span> <span class="o">=</span> <span class="n">symmetric_difference</span>
+
+    <span class="k">def</span> <span class="nf">difference</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param other: an IP set.</span>
+
+<span class="sd">        :return: the difference between this IP set and another as a new IP</span>
+<span class="sd">            set (all IP addresses and subnets that are in this IP set but</span>
+<span class="sd">            not found in the other.)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_ranges</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">result_cidrs</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">own_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">other_nets</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)</span>
+        <span class="n">own_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">other_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">own_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">own_nets</span><span class="p">)</span>
+        <span class="n">other_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">other_nets</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">own_idx</span> <span class="o">&lt;</span> <span class="n">own_len</span> <span class="ow">and</span> <span class="n">other_idx</span> <span class="o">&lt;</span> <span class="n">other_len</span><span class="p">:</span>
+            <span class="n">own_cur</span> <span class="o">=</span> <span class="n">own_nets</span><span class="p">[</span><span class="n">own_idx</span><span class="p">]</span>
+            <span class="n">other_cur</span> <span class="o">=</span> <span class="n">other_nets</span><span class="p">[</span><span class="n">other_idx</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">own_cur</span> <span class="o">==</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">own_cur</span> <span class="ow">in</span> <span class="n">other_cur</span><span class="p">:</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">other_cur</span> <span class="ow">in</span> <span class="n">own_cur</span><span class="p">:</span>
+                <span class="n">other_idx</span> <span class="o">=</span> <span class="n">_subtract</span><span class="p">(</span><span class="n">own_cur</span><span class="p">,</span> <span class="n">other_nets</span><span class="p">,</span> <span class="n">other_idx</span><span class="p">,</span>
+                                      <span class="n">result_ranges</span><span class="p">)</span>
+                <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># own_cur and other_cur have nothing in common</span>
+                <span class="k">if</span> <span class="n">own_cur</span> <span class="o">&lt;</span> <span class="n">other_cur</span><span class="p">:</span>
+                    <span class="n">result_cidrs</span><span class="p">[</span><span class="n">own_cur</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                    <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">other_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># If the above loop terminated because it processed all cidrs of</span>
+        <span class="c1"># &quot;other&quot;, then any remaining cidrs in self must be part of the result.</span>
+        <span class="k">while</span> <span class="n">own_idx</span> <span class="o">&lt;</span> <span class="n">own_len</span><span class="p">:</span>
+            <span class="n">result_cidrs</span><span class="p">[</span><span class="n">own_nets</span><span class="p">[</span><span class="n">own_idx</span><span class="p">]]</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="n">own_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">stop</span> <span class="ow">in</span> <span class="n">_iter_merged_ranges</span><span class="p">(</span><span class="n">result_ranges</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">iprange_to_cidrs</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">):</span>
+                <span class="n">result_cidrs</span><span class="p">[</span><span class="n">cidr</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">IPSet</span><span class="p">()</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">_cidrs</span> <span class="o">=</span> <span class="n">result_cidrs</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="n">__sub__</span> <span class="o">=</span> <span class="n">difference</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :return: the cardinality of this IP set (i.e. sum of individual IP \</span>
+<span class="sd">            addresses). Raises ``IndexError`` if size &gt; maxint (a Python \</span>
+<span class="sd">            limitation). Use the .size property for subnets of any size.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span>
+        <span class="k">if</span> <span class="n">size</span> <span class="o">&gt;</span> <span class="n">_sys_maxint</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span>
+                <span class="s2">&quot;range contains more than </span><span class="si">%d</span><span class="s2"> (sys.maxint) IP addresses!&quot;</span>
+                <span class="s2">&quot;Use the .size property instead.&quot;</span> <span class="o">%</span> <span class="n">_sys_maxint</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">size</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The cardinality of this IP set (based on the number of individual IP</span>
+<span class="sd">        addresses including those implicitly defined in subnets).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">([</span><span class="n">cidr</span><span class="o">.</span><span class="n">size</span> <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;:return: Python statement to create an equivalent object&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s1">&#39;IPSet(</span><span class="si">%r</span><span class="s1">)&#39;</span> <span class="o">%</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cidrs</span><span class="p">)]</span>
+
+    <span class="n">__str__</span> <span class="o">=</span> <span class="n">__repr__</span>
+
+    <span class="k">def</span> <span class="nf">iscontiguous</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns True if the members of the set form a contiguous IP</span>
+<span class="sd">        address range (with no gaps), False otherwise.</span>
+
+<span class="sd">        :return: ``True`` if the ``IPSet`` object is contiguous.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cidrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_cidrs</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cidrs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">previous</span> <span class="o">=</span> <span class="n">cidrs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">cidr</span> <span class="ow">in</span> <span class="n">cidrs</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">cidr</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">previous</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">False</span>
+                <span class="n">previous</span> <span class="o">=</span> <span class="n">cidr</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">iprange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates an IPRange for this IPSet, if all its members</span>
+<span class="sd">        form a single contiguous sequence.</span>
+
+<span class="sd">        Raises ``ValueError`` if the set is not contiguous.</span>
+
+<span class="sd">        :return: An ``IPRange`` for all IPs in the IPSet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">iscontiguous</span><span class="p">():</span>
+            <span class="n">cidrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_cidrs</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cidrs</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">None</span>
+            <span class="k">return</span> <span class="n">IPRange</span><span class="p">(</span><span class="n">cidrs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">cidrs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;IPSet is not contiguous&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">iter_ipranges</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate the merged IPRanges for this IPSet.</span>
+
+<span class="sd">        In contrast to self.iprange(), this will work even when the IPSet is</span>
+<span class="sd">        not contiguous. Adjacent IPRanges will be merged together, so you</span>
+<span class="sd">        get the minimal number of IPRanges.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sorted_ranges</span> <span class="o">=</span> <span class="p">[(</span><span class="n">cidr</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">version</span><span class="p">,</span> <span class="n">cidr</span><span class="o">.</span><span class="n">first</span><span class="p">,</span> <span class="n">cidr</span><span class="o">.</span><span class="n">last</span><span class="p">)</span> <span class="k">for</span>
+                         <span class="n">cidr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_cidrs</span><span class="p">()]</span>
+
+        <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">stop</span> <span class="ow">in</span> <span class="n">_iter_merged_ranges</span><span class="p">(</span><span class="n">sorted_ranges</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">IPRange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2016, Ryan Birmingham.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.4.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.8</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

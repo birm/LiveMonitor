@@ -1,0 +1,25 @@
+.. LiveMonitor documentation master file, created by
+   sphinx-quickstart on Sun Jun 05 01:48:48 2016.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+Welcome to LiveMonitor's documentation!
+=======================================
+
+Contents:
+
+.. toctree::
+   :maxdepth: 2
+
+   Monitor
+   PortMonitor
+   LogMonitor
+   HostMonitor
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+

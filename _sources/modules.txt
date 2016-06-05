@@ -1,0 +1,7 @@
+LiveMonitor_Doc
+===============
+
+.. toctree::
+   :maxdepth: 4
+
+   conf

@@ -1,0 +1,7 @@
+pseudo_main module
+==================
+
+.. automodule:: pseudo_main
+    :members:
+    :undoc-members:
+    :show-inheritance:
