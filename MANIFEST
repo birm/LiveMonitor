@@ -3,7 +3,7 @@ README
 setup.py
 LiveMonitor\HostMonitor.py
 LiveMonitor\LogMonitor.py
-LiveMonitor\MonitorRegistry.py
+LiveMonitor\Monitor.py
 LiveMonitor\PortMonitor.py
 LiveMonitor\__init__.py
 LiveMonitor\Monitors\PortMonitor.py
