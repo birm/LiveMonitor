@@ -1,6 +1,6 @@
 #status
 
-Devleopment on struct-stream has ended.
+Devleopment on LiveMonito has ended.
 
 #LiveMonitor
 by Ryan Birmingham
